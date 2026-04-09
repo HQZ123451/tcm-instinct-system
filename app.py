@@ -4,7 +4,7 @@ import streamlit as st
 from PIL import Image
 
 # 导入模块
-from config import init_database, get_api_keys, INSTINCT_SYSTEMS
+from config import get_api_keys, INSTINCT_SYSTEMS
 from database import init_database as init_db, create_user, get_all_users, delete_user, update_user_role
 from auth import login, logout, is_logged_in, is_admin, get_current_user
 from multimodal import full_multimodal_analysis, preprocess_image
