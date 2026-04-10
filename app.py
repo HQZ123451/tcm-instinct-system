@@ -293,40 +293,61 @@ def show_multimodal_diagnosis():
             for principle in set(result["treatment_principles"]):
                 st.success(f"💡 {principle}")
         
-        # 推荐方剂
+           # 推荐方剂（修复版 - 显示组成药物）
         st.subheader("六、推荐方剂")
         if result.get("prescriptions"):
             unique_prescriptions = list(dict.fromkeys(result["prescriptions"]))[:8]
             
+            # 从Neo4j查询方剂详情
             try:
-                from database import init_connections
-                driver, _ = init_connections()
+                driver = get_neo4j_driver()
                 with driver.session() as session:
                     for p_name in unique_prescriptions:
                         query = """
                         MATCH (f:方剂 {name: $name})
                         OPTIONAL MATCH (f)-[:组成]->(m:药物)
                         OPTIONAL MATCH (f)-[:属于]->(t:治法)
-                        RETURN f.name AS 方剂, t.name AS 治法, 
-                               collect(DISTINCT m.name) AS 药物组成
+                        OPTIONAL MATCH (f)-[:治疗]->(d:疾病)
+                        RETURN f.name AS 方剂, 
+                               t.name AS 治法, 
+                               collect(DISTINCT m.name) AS 药物组成,
+                               f.组成数量 AS 药味数,
+                               collect(DISTINCT d.name) AS 治疗疾病
                         """
                         db_result = session.run(query, name=p_name)
                         record = db_result.single()
                         
-                        if record:
-                            with st.container():
-                                cols = st.columns([2, 3])
+                        if record and record["方剂"]:
+                            with st.expander(f"💊 {record['方剂']}", expanded=True):
+                                cols = st.columns([1, 2])
                                 with cols[0]:
-                                    st.markdown(f"**💊 {record['方剂']}**")
                                     if record['治法']:
-                                        st.caption(f"治法：{record['治法']}")
+                                        st.markdown(f"**治法：**{record['治法']}")
+                                    st.markdown(f"**药味数：**{record['药味数'] or len(record['药物组成'])}味")
+                                    if record['治疗疾病']:
+                                        st.caption(f"主治：{', '.join(record['治疗疾病'][:3])}")
                                 with cols[1]:
                                     if record['药物组成']:
-                                        st.markdown(f"组成：{'、'.join(record['药物组成'])}")
-                                st.divider()
+                                        st.markdown("**药物组成：**")
+                                        # 显示为标签样式
+                                        drug_html = " ".join([
+                                            f'<span style="background:#e8f4f8;padding:4px 8px;border-radius:4px;margin:2px;display:inline-block;">{d}</span>' 
+                                            for d in record['药物组成']
+                                        ])
+                                        st.markdown(drug_html, unsafe_allow_html=True)
+                                    else:
+                                        st.caption("暂无组成信息")
+                        else:
+                            # 如果Neo4j中没有，只显示名称
+                            st.markdown(f"- 💊 {p_name}（暂无详细信息）")
             except Exception as e:
+                st.warning(f"查询方剂详情失败：{e}")
+                # 降级显示
                 for p_name in unique_prescriptions:
                     st.markdown(f"- 💊 {p_name}")
+        else:
+            st.info("暂无推荐方剂")
+
         
         # 调护建议
         st.subheader("七、调护建议")
