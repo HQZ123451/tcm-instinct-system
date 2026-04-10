@@ -1,16 +1,70 @@
-# database.py - SQLite数据库操作
+# database.py - 完整修复版
 
 import sqlite3
 import bcrypt
-import os
-from config import DB_PATH, DEFAULT_ADMIN
+from neo4j import GraphDatabase
+import streamlit as st
+
+DB_PATH = "users.db"
+
+# Neo4j 连接配置（从 secrets 读取）
+def get_neo4j_config():
+    """获取Neo4j配置"""
+    return {
+        "uri": st.secrets.get("NEO4J_URI", "bolt://localhost:7687"),
+        "user": st.secrets.get("NEO4J_USER", "neo4j"),
+        "password": st.secrets.get("NEO4J_PASSWORD", "")
+    }
+
+# 全局连接缓存
+_neo4j_driver = None
+
+def init_connections():
+    """
+    初始化所有连接（Neo4j + 智谱AI）
+    返回: (neo4j_driver, zhipuai_client)
+    """
+    global _neo4j_driver
+    
+    # 初始化 Neo4j
+    if _neo4j_driver is None:
+        config = get_neo4j_config()
+        _neo4j_driver = GraphDatabase.driver(
+            config["uri"], 
+            auth=(config["user"], config["password"])
+        )
+    
+    # 初始化智谱AI
+    try:
+        from zhipuai import ZhipuAI
+        api_key = st.secrets.get("API_KEY", "")
+        zhipu_client = ZhipuAI(api_key=api_key) if api_key else None
+    except:
+        zhipu_client = None
+    
+    return _neo4j_driver, zhipu_client
+
+def get_neo4j_driver():
+    """获取Neo4j驱动（用于查询）"""
+    global _neo4j_driver
+    if _neo4j_driver is None:
+        init_connections()
+    return _neo4j_driver
+
+def close_connections():
+    """关闭所有连接"""
+    global _neo4j_driver
+    if _neo4j_driver:
+        _neo4j_driver.close()
+        _neo4j_driver = None
+
+# ========== SQLite 用户数据库操作 ==========
 
 def init_database():
     """初始化数据库，创建用户表"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # 创建用户表
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,44 +78,21 @@ def init_database():
     )
     ''')
     
-    # 创建分析历史表（可选）
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS analysis_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        image_features TEXT,
-        instinct_systems TEXT,
-        recommended_prescriptions TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users (id)
-    )
-    ''')
-    
     conn.commit()
     
-    # 检查是否已有管理员，没有则创建默认管理员
-    cursor.execute("SELECT * FROM users WHERE username = ?", (DEFAULT_ADMIN["username"],))
+    # 创建默认管理员账号
+    cursor.execute("SELECT * FROM users WHERE username = 'admin'")
     if not cursor.fetchone():
-        create_user(
-            username=DEFAULT_ADMIN["username"],
-            password=DEFAULT_ADMIN["password"],
-            name=DEFAULT_ADMIN["name"],
-            email=DEFAULT_ADMIN["email"],
-            role=DEFAULT_ADMIN["role"]
-        )
-        print(f"✅ 默认管理员已创建：用户名 {DEFAULT_ADMIN['username']}，密码 {DEFAULT_ADMIN['password']}")
+        create_user('admin', 'admin123', '管理员', 'admin@tcm.com', 'admin')
+        print("默认管理员已创建：用户名 admin，密码 admin123")
     
     conn.close()
 
 def create_user(username, password, name, email='', role='user'):
-    """
-    创建新用户
-    返回: (success: bool, message: str)
-    """
+    """创建新用户"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # 密码加密
     password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
     
     try:
@@ -74,13 +105,10 @@ def create_user(username, password, name, email='', role='user'):
         return True, "注册成功！请返回登录"
     except sqlite3.IntegrityError:
         conn.close()
-        return False, "用户名已存在，请更换"
+        return False, "用户名已存在"
 
 def verify_login(username, password):
-    """
-    验证登录
-    返回: (success: bool, user_info: dict or None)
-    """
+    """验证用户登录"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -106,7 +134,7 @@ def verify_login(username, password):
     return False, None
 
 def get_all_users():
-    """获取所有用户列表（管理员用）"""
+    """获取所有用户列表"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -148,7 +176,7 @@ def update_last_login(user_id):
     conn.commit()
     conn.close()
 
-def check_username_exists(username):
+def user_exists(username):
     """检查用户名是否存在"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
