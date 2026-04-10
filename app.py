@@ -144,13 +144,15 @@ def show_admin_page():
         st.rerun()
 
 # ========== 多模态本能论诊断页面 ==========
+
 def show_multimodal_diagnosis():
-    """多模态本能论诊断页面"""
+    """多模态本能论诊断页面（修复版）"""
     st.header("🔬 本能系统多模态诊断")
     st.markdown("*上传舌象图片，AI结合《生命本能系统论》进行智能分析*")
     st.markdown("---")
     
     # 获取API Key
+    from config import get_api_keys
     api_keys = get_api_keys()
     
     col1, col2 = st.columns([1, 1])
@@ -158,14 +160,12 @@ def show_multimodal_diagnosis():
     with col1:
         st.subheader("📷 舌象采集")
         
-        # 图片上传
         uploaded_file = st.file_uploader(
             "请上传清晰的舌象照片",
             type=['jpg', 'jpeg', 'png'],
             help="建议在自然光下拍摄，避免使用滤镜"
         )
         
-        # 拍摄指南
         with st.expander("📖 拍摄指南"):
             st.markdown("""
             **拍摄要求：**
@@ -184,7 +184,6 @@ def show_multimodal_diagnosis():
     with col2:
         st.subheader("📝 症状补充（选填）")
         
-        # 常用症状选择
         common_symptoms = [
             "发热", "怕冷", "头疼", "咳嗽", 
             "胸闷", "气短", "心慌", "失眠",
@@ -195,7 +194,6 @@ def show_multimodal_diagnosis():
         selected_symptoms = st.multiselect("选择症状", common_symptoms)
         custom_symptoms = st.text_input("或手动输入：", placeholder="例如：头疼 口渴 失眠")
         
-        # 合并症状
         all_text_symptoms = selected_symptoms + (custom_symptoms.split() if custom_symptoms else [])
         
         if all_text_symptoms:
@@ -209,7 +207,7 @@ def show_multimodal_diagnosis():
             if not uploaded_file:
                 st.error("请先上传舌象图片")
             elif not api_keys.get("dashscope_key"):
-                st.error("未配置通义千问API Key，请联系管理员")
+                st.error("未配置通义千问API Key")
             else:
                 with st.spinner("🤖 AI正在分析舌象并映射本能系统..."):
                     result = full_multimodal_analysis(
@@ -224,44 +222,115 @@ def show_multimodal_diagnosis():
                     else:
                         st.error(f"分析失败：{result.get('error', '未知错误')}")
     
-    # 显示分析结果
+    # 显示分析结果（修复后的完整显示）
     if 'analysis_result' in st.session_state:
         result = st.session_state['analysis_result']
         
         st.markdown("---")
-        st.subheader("🧬 本能系统诊断结果")
+        st.header("📋 《生命本能系统论》诊断分析报告")
         
-        # 三列布局显示
-        col_res1, col_res2, col_res3 = st.columns(3)
-        
-        with col_res1:
-            st.markdown("### 📊 识别的舌象特征")
+        # ===== 1. 舌象特征 =====
+        st.subheader("一、望舌诊察")
+        if result.get("tongue_features"):
+            st.markdown("**识别的舌象特征：**")
             for feature in result["tongue_features"]:
                 st.markdown(f"- ✅ {feature}")
+        else:
+            st.warning("未识别到舌象特征")
         
-        with col_res2:
-            st.markdown("### 🧠 涉及的本能系统")
-            for system in result["instinct_systems"]:
+        if result.get("text_symptoms"):
+            st.markdown(f"**伴随症状：**{'、'.join(result['text_symptoms'])}")
+        
+        # ===== 2. 本能系统分析 =====
+        st.subheader("二、本能系统分析")
+        if result.get("instinct_systems"):
+            for i, system in enumerate(result["instinct_systems"], 1):
                 with st.container():
-                    st.markdown(f"**{system['name']}**")
-                    st.caption(system['description'][:30] + "...")
+                    st.markdown(f"**{i}. {system['name']}**")
+                    st.caption(f"病机：{system.get('description', '暂无描述')}")
+                    st.info(f"病势类型：{system.get('trend', '未知')}")
+        else:
+            st.info("根据舌象特征，未匹配到明确的本能系统异常")
         
-        with col_res3:
-            st.markdown("### 💊 推荐方剂")
-            for p in result["prescriptions"][:5]:
-                st.markdown(f"- {p}")
+        # ===== 3. 病势综合判断 =====
+        st.subheader("三、病势综合判断")
+        if result.get("disease_trends"):
+            for trend in result["disease_trends"]:
+                if "外源" in trend:
+                    st.error(f"🔴 {trend}")
+                elif "内源" in trend:
+                    st.warning(f"🟡 {trend}")
+                else:
+                    st.info(f"🔵 {trend}")
+        else:
+            st.info("暂无明确病势判断")
         
-        # 详细报告
-        with st.expander("📄 查看完整《生命本能系统论》诊断报告", expanded=True):
-            st.markdown(result["report"])
+        # ===== 4. 核心病机 =====
+        if result.get("pathogenesis"):
+            st.subheader("四、核心病机")
+            for pg in set(result["pathogenesis"]):
+                st.markdown(f"- {pg}")
         
-        # 知识图谱验证
-        st.markdown("---")
-        st.subheader("🔗 知识图谱验证")
-        st.info("将本能系统分析结果与Neo4j知识图谱进行交叉验证...")
+        # ===== 5. 治则治法 =====
+        st.subheader("五、治则治法")
+        if result.get("treatment_principles"):
+            for principle in set(result["treatment_principles"]):
+                st.success(f"💡 {principle}")
+        else:
+            st.info("暂无明确治则")
         
-        # 这里可以添加Neo4j查询代码
-        # 根据result["all_symptoms"]查询疾病和方剂
+        # ===== 6. 推荐方剂 =====
+        st.subheader("六、推荐方剂")
+        if result.get("prescriptions"):
+            # 去重并限制数量
+            unique_prescriptions = list(dict.fromkeys(result["prescriptions"]))[:8]
+            
+            # 查询Neo4j获取方剂详情
+            from database import init_connections
+            try:
+                driver, _ = init_connections()
+                with driver.session() as session:
+                    for p_name in unique_prescriptions:
+                        query = """
+                        MATCH (f:方剂 {name: $name})
+                        OPTIONAL MATCH (f)-[:组成]->(m:药物)
+                        OPTIONAL MATCH (f)-[:属于]->(t:治法)
+                        RETURN f.name AS 方剂, t.name AS 治法, 
+                               collect(DISTINCT m.name) AS 药物组成
+                        """
+                        db_result = session.run(query, name=p_name)
+                        record = db_result.single()
+                        
+                        if record:
+                            with st.container():
+                                cols = st.columns([2, 3])
+                                with cols[0]:
+                                    st.markdown(f"**💊 {record['方剂']}**")
+                                    if record['治法']:
+                                        st.caption(f"治法：{record['治法']}")
+                                with cols[1]:
+                                    if record['药物组成']:
+                                        st.markdown(f"组成：{'、'.join(record['药物组成'])}")
+                                st.divider()
+            except Exception as e:
+                # 如果Neo4j查询失败，直接显示方剂名
+                for p_name in unique_prescriptions:
+                    st.markdown(f"- 💊 {p_name}")
+        else:
+            st.info("暂无推荐方剂")
+        
+        # ===== 7. 调护建议 =====
+        st.subheader("七、调护建议")
+        st.markdown("""
+        1. **饮食调护**：顺应本能系统需求，外源性疾病宜清淡易消化，内源性疾病宜辨证施食
+        2. **起居调护**：保证充足睡眠，利于自主调节系统恢复
+        3. **情志调护**：保持平和心态，避免过度应激影响应变系统
+        4. **运动调护**：适度运动，促进气血流通，但避免过劳伤正
+        """)
+        
+        # ===== 8. 原始AI识别结果（可选查看）=====
+        with st.expander("🔍 查看原始AI识别结果"):
+            st.text(result.get("raw_ai_result", "无"))
 
 # ========== 主页面（登录后）==========
 def show_main_page():
