@@ -331,6 +331,372 @@ def show_multimodal_diagnosis():
         # ===== 8. 原始AI识别结果（可选查看）=====
         with st.expander("🔍 查看原始AI识别结果"):
             st.text(result.get("raw_ai_result", "无"))
+# ========== 药剂推荐界面（登录后）==========
+
+
+def show_prescription_recommendation():
+    """方剂推荐模块 - RAG架构"""
+    st.header("💊 智能方剂推荐")
+    st.markdown("*输入症状，系统结合知识图谱和AI进行智能推荐*")
+    st.markdown("---")
+    
+    # 获取Neo4j连接
+    from config import get_api_keys
+    api_keys = get_api_keys()
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("📝 症状输入")
+        
+        # 获取所有症状
+        try:
+            from database import init_connections
+            driver, _ = init_connections()
+            with driver.session() as session:
+                result = session.run("MATCH (s:症状) RETURN s.name AS name ORDER BY s.name")
+                all_symptoms = [r["name"] for r in result]
+        except:
+            all_symptoms = ["发热", "怕冷", "头疼", "咳嗽", "胸闷", "气短", "心慌", "失眠", 
+                          "腹疼", "便秘", "腹泻", "没食欲", "口渴", "口苦", "口干", "疲劳"]
+        
+        # 症状选择
+        selected_symptoms = st.multiselect("选择症状（可多选）", all_symptoms)
+        custom_input = st.text_input("或手动输入：", placeholder="例如：发烧 咳嗽 头疼")
+        
+        all_input_symptoms = selected_symptoms + (custom_input.replace("，", " ").split() if custom_input else [])
+        
+        if all_input_symptoms:
+            st.info(f"**已选症状：**{'、'.join(all_input_symptoms)}")
+        
+        # 分析按钮
+        if st.button("🔍 智能推荐方剂", type="primary", use_container_width=True):
+            if not all_input_symptoms:
+                st.error("请至少输入一个症状")
+            else:
+                with st.spinner("🧠 正在分析症状并查询知识图谱..."):
+                    st.session_state['prescription_symptoms'] = all_input_symptoms
+                    st.rerun()
+    
+    with col2:
+        if 'prescription_symptoms' in st.session_state:
+            symptoms = st.session_state['prescription_symptoms']
+            
+            st.subheader("📊 分析结果")
+            
+            # ===== Step 1: 从Neo4j查询相关疾病 =====
+            try:
+                from database import init_connections
+                driver, client = init_connections()
+                
+                with driver.session() as session:
+                    # 查询匹配的疾病
+                    query = """
+                    MATCH (d:疾病)-[:临床表现]->(s:症状)
+                    WHERE s.name IN $symptoms
+                    WITH d, count(s) AS 匹配症状数, collect(s.name) AS 匹配的症状
+                    ORDER BY 匹配症状数 DESC
+                    RETURN d.name AS 疾病, d.分类 AS 分类, 匹配症状数, 匹配的症状
+                    LIMIT 5
+                    """
+                    diseases = list(session.run(query, symptoms=symptoms))
+            except Exception as e:
+                diseases = []
+                st.error(f"数据库查询失败：{e}")
+            
+            # ===== Step 2: 查询相关方剂 =====
+            all_prescriptions = []
+            disease_info = []
+            
+            if diseases:
+                st.markdown("### 🏥 可能的疾病（按匹配度排序）")
+                
+                for i, d in enumerate(diseases, 1):
+                    with st.container():
+                        st.markdown(f"**【{i}】{d['疾病']}** ({d['分类']})")
+                        st.caption(f"匹配{d['匹配症状数']}个症状：{'、'.join(d['匹配的症状'])}")
+                        
+                        # 查询该疾病的方剂
+                        try:
+                            with driver.session() as session:
+                                p_query = """
+                                MATCH (f:方剂)-[:治疗]->(d:疾病 {name: $disease})
+                                OPTIONAL MATCH (f)-[:组成]->(m:药物)
+                                OPTIONAL MATCH (f)-[:属于]->(t:治法)
+                                RETURN f.name AS 方剂, t.name AS 治法, 
+                                       collect(DISTINCT m.name) AS 药物组成,
+                                       f.组成数量 AS 药味数
+                                """
+                                prescriptions = list(session.run(p_query, disease=d['疾病']))
+                                
+                                for p in prescriptions:
+                                    all_prescriptions.append({
+                                        "疾病": d['疾病'],
+                                        "方剂": p['方剂'],
+                                        "治法": p['治法'],
+                                        "组成": p['药物组成'],
+                                        "匹配症状": d['匹配的症状']
+                                    })
+                        except Exception as e:
+                            st.error(f"查询方剂失败：{e}")
+                        
+                        st.divider()
+            
+            # ===== Step 3: RAG - 用AI生成专业解释 =====
+            if all_prescriptions and api_keys.get("zhipuai_key"):
+                st.markdown("---")
+                st.markdown("### 🤖 AI智能分析（RAG架构）")
+                
+                # 构建上下文（从知识图谱检索的信息）
+                context = f"""
+                患者症状：{'、'.join(symptoms)}
+                
+                知识图谱检索结果：
+                可能的疾病：{', '.join([d['疾病'] for d in diseases])}
+                推荐方剂：{', '.join(list(dict.fromkeys([p['方剂'] for p in all_prescriptions])))}
+                """
+                
+                # 调用智谱AI生成专业解释
+                try:
+                    from zhipuai import ZhipuAI
+                    ai_client = ZhipuAI(api_key=api_keys["zhipuai_key"])
+                    
+                    prompt = f"""你是基于《生命本能系统论》的中医专家。
+                    
+                    根据以下知识图谱检索结果，为患者生成专业的方剂推荐说明：
+                    
+                    {context}
+                    
+                    请从以下角度分析：
+                    1. 这些症状反映什么病势？
+                    2. 为什么推荐这些方剂？
+                    3. 各方剂的作用原理（结合本能系统论）
+                    4. 用药注意事项
+                    
+                    用通俗易懂的语言回答。"""
+                    
+                    with st.spinner("AI正在生成专业分析..."):
+                        response = ai_client.chat.completions.create(
+                            model="glm-4-flash",
+                            messages=[
+                                {"role": "system", "content": "你是精通《生命本能系统论》的中医专家"},
+                                {"role": "user", "content": prompt}
+                            ]
+                        )
+                        
+                        ai_analysis = response.choices[0].message.content
+                        st.info(ai_analysis)
+                        
+                except Exception as e:
+                    st.warning(f"AI分析生成失败：{e}")
+            
+            # ===== Step 4: 显示详细方剂信息 =====
+            st.markdown("---")
+            st.markdown("### 💊 方剂详情")
+            
+            # 去重显示
+            shown_prescriptions = set()
+            for p in all_prescriptions:
+                if p['方剂'] not in shown_prescriptions:
+                    shown_prescriptions.add(p['方剂'])
+                    
+                    with st.expander(f"{p['方剂']}（治疗{p['疾病']}）"):
+                        cols = st.columns([1, 2])
+                        with cols[0]:
+                            st.markdown(f"**治法：**{p['治法'] or '暂无'}")
+                            st.markdown(f"**药味数：**{len(p['组成'])}味")
+                        with cols[1]:
+                            st.markdown(f"**药物组成：**")
+                            st.markdown(f"{'、'.join(p['组成']) if p['组成'] else '暂无组成信息'}")
+# ========== 智能问答界面（登录后）==========
+
+def show_qa_module():
+    """智能问答模块 - RAG架构"""
+    st.header("💬 智能问答")
+    st.markdown("*基于《生命本能系统论》知识图谱的AI问答系统*")
+    st.markdown("---")
+    
+    # 获取API Key和Neo4j连接
+    from config import get_api_keys
+    from database import init_connections
+    
+    api_keys = get_api_keys()
+    
+    # 问题输入
+    question = st.text_area(
+        "请输入您的问题：",
+        placeholder="例如：\n- 发烧怕冷是什么问题？\n- 麻黄汤有什么功效？\n- 舌质红苔黄腻是什么病势？",
+        height=100
+    )
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🚀 提问", type="primary", use_container_width=True):
+            if not question:
+                st.error("请输入问题")
+            elif not api_keys.get("zhipuai_key"):
+                st.error("未配置智谱AI API Key")
+            else:
+                with st.spinner("🤖 正在检索知识图谱并生成回答..."):
+                    # ===== Step 1: 从问题中提取关键词 =====
+                    keywords = extract_keywords(question)
+                    
+                    # ===== Step 2: 从Neo4j检索相关知识 =====
+                    knowledge_context = ""
+                    retrieved_data = {
+                        "symptoms": [],
+                        "diseases": [],
+                        "prescriptions": [],
+                        "instinct_systems": []
+                    }
+                    
+                    try:
+                        driver, _ = init_connections()
+                        with driver.session() as session:
+                            # 检索症状相关疾病
+                            for keyword in keywords:
+                                # 查症状
+                                s_query = """
+                                MATCH (d:疾病)-[:临床表现]->(s:症状)
+                                WHERE s.name CONTAINS $keyword
+                                RETURN d.name AS 疾病, s.name AS 症状, d.分类 AS 分类
+                                LIMIT 3
+                                """
+                                s_result = session.run(s_query, keyword=keyword)
+                                for r in s_result:
+                                    retrieved_data["symptoms"].append({
+                                        "症状": r["症状"],
+                                        "疾病": r["疾病"],
+                                        "分类": r["分类"]
+                                    })
+                                
+                                # 查方剂
+                                p_query = """
+                                MATCH (f:方剂)
+                                WHERE f.name CONTAINS $keyword
+                                OPTIONAL MATCH (f)-[:组成]->(m:药物)
+                                OPTIONAL MATCH (f)-[:治疗]->(d:疾病)
+                                RETURN f.name AS 方剂, 
+                                       collect(DISTINCT m.name) AS 组成,
+                                       collect(DISTINCT d.name) AS 治疗疾病
+                                LIMIT 3
+                                """
+                                p_result = session.run(p_query, keyword=keyword)
+                                for r in p_result:
+                                    retrieved_data["prescriptions"].append({
+                                        "方剂": r["方剂"],
+                                        "组成": r["组成"],
+                                        "治疗疾病": r["治疗疾病"]
+                                    })
+                                
+                                # 查疾病
+                                d_query = """
+                                MATCH (d:疾病)
+                                WHERE d.name CONTAINS $keyword
+                                OPTIONAL MATCH (d)-[:临床表现]->(s:症状)
+                                OPTIONAL MATCH (f:方剂)-[:治疗]->(d)
+                                RETURN d.name AS 疾病, d.分类 AS 分类,
+                                       collect(DISTINCT s.name) AS 症状,
+                                       collect(DISTINCT f.name) AS 治疗方剂
+                                LIMIT 3
+                                """
+                                d_result = session.run(d_query, keyword=keyword)
+                                for r in d_result:
+                                    retrieved_data["diseases"].append({
+                                        "疾病": r["疾病"],
+                                        "分类": r["分类"],
+                                        "症状": r["症状"],
+                                        "治疗方剂": r["治疗方剂"]
+                                    })
+                    
+                    except Exception as e:
+                        st.warning(f"知识图谱检索部分失败：{e}")
+                    
+                    # 构建知识上下文
+                    if retrieved_data["symptoms"]:
+                        knowledge_context += "**症状相关疾病：**\n"
+                        for item in retrieved_data["symptoms"][:3]:
+                            knowledge_context += f"- {item['症状']} → {item['疾病']}（{item['分类']}）\n"
+                    
+                    if retrieved_data["prescriptions"]:
+                        knowledge_context += "\n**相关方剂：**\n"
+                        for item in retrieved_data["prescriptions"][:3]:
+                            knowledge_context += f"- {item['方剂']}：组成{'、'.join(item['组成'][:5])}...\n"
+                    
+                    if retrieved_data["diseases"]:
+                        knowledge_context += "\n**相关疾病：**\n"
+                        for item in retrieved_data["diseases"][:3]:
+                            knowledge_context += f"- {item['疾病']}（{item['分类']}）：症状{'、'.join(item['症状'][:5])}...\n"
+                    
+                    # ===== Step 3: 调用智谱AI生成回答（RAG）=====
+                    try:
+                        from zhipuai import ZhipuAI
+                        ai_client = ZhipuAI(api_key=api_keys["zhipuai_key"])
+                        
+                        rag_prompt = f"""你是基于《生命本能系统论》的中医专家。
+                        
+用户问题：{question}
+
+从知识图谱检索到的相关信息：
+{knowledge_context if knowledge_context else "未检索到直接相关信息，请基于中医理论回答。"}
+
+请根据以上信息，用专业且易懂的方式回答用户问题。
+回答要求：
+1. 如果知识图谱中有相关信息，优先基于这些信息回答
+2. 结合《生命本能系统论》的理论框架
+3. 解释清楚病势、本能系统、治疗原则的关系
+4. 如果信息不足，请说明并给出一般性建议
+
+请用中文回答。"""
+                        
+                        response = ai_client.chat.completions.create(
+                            model="glm-4-flash",
+                            messages=[
+                                {"role": "system", "content": "你是精通《生命本能系统论》的中医专家"},
+                                {"role": "user", "content": rag_prompt}
+                            ]
+                        )
+                        
+                        answer = response.choices[0].message.content
+                        
+                        # 显示结果
+                        st.success("回答：")
+                        st.write(answer)
+                        
+                        # 显示检索到的知识（可选）
+                        with st.expander("🔍 查看知识图谱检索结果"):
+                            st.markdown("**检索关键词：**" + "、".join(keywords))
+                            st.json(retrieved_data)
+                        
+                    except Exception as e:
+                        st.error(f"AI回答生成失败：{e}")
+
+def extract_keywords(text):
+    """从问题中提取关键词"""
+    # 预定义的中医关键词库
+    keyword_dict = {
+        "症状": ["发热", "怕冷", "头疼", "咳嗽", "胸闷", "气短", "心慌", "失眠", 
+               "腹疼", "便秘", "腹泻", "没食欲", "口渴", "口苦", "口干", "疲劳",
+               "腰疼", "身疼", "骨节疼", "全身无力", "心烦"],
+        "方剂": ["麻黄汤", "桂枝汤", "白虎汤", "大承气汤", "小柴胡汤", "五苓散",
+               "苓桂术甘汤", "生白化脂合剂汤", "生白化瘤合剂汤", "天和强生合剂",
+               "泻心汤", "栀子豉汤", "茵陈蒿汤", "大青龙汤", "小青龙汤"],
+        "疾病": ["流行性感冒", "高血压", "糖尿病", "冠心病", "肿瘤", "亚健康",
+               "黄疸", "便秘", "水气病", "高血脂", "肺炎", "麻疹"],
+        "舌象": ["舌质红", "苔黄腻", "苔白腻", "舌质淡白", "胖大舌", "裂纹舌"]
+    }
+    
+    keywords = []
+    for category, words in keyword_dict.items():
+        for word in words:
+            if word in text:
+                keywords.append(word)
+    
+    # 如果没找到关键词，返回原问题的前几个词
+    if not keywords:
+        keywords = text[:20].split()
+    
+    return list(set(keywords))[:5]  # 最多返回5个关键词
 
 # ========== 主页面（登录后）==========
 def show_main_page():
@@ -390,16 +756,14 @@ def show_main_page():
         - ...
         """)
     
-    elif menu == "🔬 本能系统诊断":
-        show_multimodal_diagnosis()
-    
-    elif menu == "💊 方剂查询":
-        st.header("💊 方剂查询")
-        st.info("功能开发中...")
-    
-    elif menu == "💬 智能问答":
-        st.header("💬 智能问答")
-        st.info("功能开发中...")
+elif menu == "🔬 本能系统诊断":
+    show_multimodal_diagnosis() 
+
+elif menu == "💊 方剂推荐":
+    show_prescription_recommendation()  
+
+elif menu == "💬 智能问答":
+    show_qa_module()  
 
 # ========== 主入口 ==========
 def main():
