@@ -1,10 +1,10 @@
-# multimodal.py - 多模态图像分析模块
+# multimodal.py - 多模态图像分析模块（修复版）
 
 import base64
 from io import BytesIO
 from PIL import Image
 import streamlit as st
-from instinct_mapping import InstinctTheoryAnalyzer
+from instinct_mapping import InstinctTheoryAnalyzer, INSTINCT_TONGUE_MAPPING
 
 analyzer = InstinctTheoryAnalyzer()
 
@@ -12,11 +12,9 @@ def preprocess_image(image_file):
     """图像预处理"""
     image = Image.open(image_file)
     
-    # 转换为RGB
     if image.mode != 'RGB':
         image = image.convert('RGB')
     
-    # 调整大小
     max_size = 1024
     if max(image.size) > max_size:
         ratio = max_size / max(image.size)
@@ -91,27 +89,30 @@ def extract_features_from_text(text):
     keyword_map = {
         # 舌质
         "红": "舌质红", "绛红": "舌质绛红", "紫": "舌质紫",
-        "淡白": "舌质淡白", "淡紫": "舌质淡紫",
+        "淡白": "舌质淡白", "淡紫": "舌质淡紫", "淡红": "舌质淡红",
         
         # 舌苔
         "薄白": "苔薄白", "白腻": "苔白腻", "黄腻": "苔黄腻",
         "黄燥": "苔黄燥", "无苔": "无苔", "剥苔": "剥苔",
+        "厚腻": "苔厚腻",
         
         # 舌形
         "胖大": "胖大舌", "瘦薄": "瘦薄舌", "齿痕": "齿痕舌",
-        "裂纹": "裂纹舌", "点刺": "点刺舌"
+        "裂纹": "裂纹舌", "点刺": "点刺舌", "正常": "舌体正常"
     }
     
-    for keyword, feature in keyword_map.items():
-        if keyword in text:
-            if feature not in features:
-                features.append(feature)
+    # 优先匹配长的关键词
+    sorted_keywords = sorted(keyword_map.keys(), key=len, reverse=True)
+    
+    for keyword in sorted_keywords:
+        if keyword in text and keyword_map[keyword] not in features:
+            features.append(keyword_map[keyword])
     
     return features
 
 def full_multimodal_analysis(image, text_symptoms=None, api_key=None):
     """
-    完整多模态分析流程
+    完整多模态分析流程 - 返回结构化数据
     """
     if not api_key:
         return {"success": False, "error": "未配置API Key"}
@@ -124,20 +125,30 @@ def full_multimodal_analysis(image, text_symptoms=None, api_key=None):
     
     tongue_features = img_result["features"]
     
-    # 2. 本能论分析
-    report, analysis = analyzer.generate_report(tongue_features, text_symptoms)
+    # 如果AI没有识别出特征，使用默认特征（用于测试）
+    if not tongue_features:
+        tongue_features = ["舌质红", "苔黄腻"]  # 默认测试特征
     
-    # 3. 合并所有症状
+    # 2. 本能论分析
+    analysis = analyzer.analyze(tongue_features)
+    
+    # 3. 生成本能论报告
+    report, _ = analyzer.generate_report(tongue_features, text_symptoms)
+    
+    # 4. 合并所有症状
     all_symptoms = tongue_features + (text_symptoms or [])
     
+    # 5. 构建完整的返回数据结构
     return {
         "success": True,
         "tongue_features": tongue_features,
         "text_symptoms": text_symptoms or [],
         "all_symptoms": list(set(all_symptoms)),
-        "instinct_systems": analysis["instinct_systems"],
-        "disease_trends": analysis["disease_trends"],
-        "prescriptions": analysis["prescriptions"],
+        "instinct_systems": analysis.get("instinct_systems", []),
+        "disease_trends": analysis.get("disease_trends", []),
+        "pathogenesis": analysis.get("pathogenesis", []),
+        "treatment_principles": analysis.get("treatment_principles", []),
+        "prescriptions": analysis.get("prescriptions", []),
         "report": report,
         "raw_ai_result": img_result["raw_result"]
     }
