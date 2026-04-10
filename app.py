@@ -19,6 +19,7 @@ st.set_page_config(
     layout="wide"
 )
 
+
 # ========== 登录/注册页面 ==========
 def show_login_register_page():
     """登录注册页面（同一界面）"""
@@ -26,10 +27,8 @@ def show_login_register_page():
     st.markdown("*基于《生命本能系统论》与多模态AI*")
     st.markdown("---")
     
-    # 使用tabs在同一页面切换
     tab_login, tab_register = st.tabs(["🔑 登录", "📝 注册新账号"])
     
-    # ===== 登录 =====
     with tab_login:
         st.subheader("用户登录")
         
@@ -54,7 +53,6 @@ def show_login_register_page():
             首次使用请先注册
             """)
     
-    # ===== 注册 =====
     with tab_register:
         st.subheader("新用户注册")
         
@@ -68,7 +66,6 @@ def show_login_register_page():
         reg_email = st.text_input("邮箱（选填）", key="reg_email")
         
         if st.button("立即注册", type="primary", use_container_width=True):
-            # 验证
             if not all([reg_username, reg_password, reg_name]):
                 st.error("请填写所有必填项（带*号）")
             elif reg_password != reg_password2:
@@ -82,29 +79,26 @@ def show_login_register_page():
                 else:
                     st.error(f"❌ {msg}")
 
+
 # ========== 管理员页面 ==========
 def show_admin_page():
     """管理员用户管理页面"""
     st.title("👤 用户管理（管理员）")
     st.markdown("---")
     
-    # 显示当前管理员
     user = get_current_user()
     st.info(f"当前管理员：**{user['name']}**（{user['username']}）")
     
-    # 获取所有用户
     users = get_all_users()
     
     st.subheader(f"注册用户列表（共 {len(users)} 人）")
     
     if users:
-        # 表头
         cols = st.columns([0.5, 1.5, 1.5, 2, 1, 1.5, 1.5])
         headers = ["ID", "用户名", "显示名", "邮箱", "角色", "注册时间", "操作"]
         for col, header in zip(cols, headers):
             col.write(f"**{header}**")
         
-        # 用户列表
         for user_data in users:
             user_id, username, name, email, role, created_at, last_login = user_data
             
@@ -116,9 +110,7 @@ def show_admin_page():
             cols[4].write("🔴 管理员" if role == "admin" else "🟢 用户")
             cols[5].write(created_at[:10] if created_at else "-")
             
-            # 操作按钮
             with cols[6]:
-                # 不能操作自己
                 if username != user['username']:
                     col_del, col_role = st.columns(2)
                     with col_del:
@@ -143,15 +135,42 @@ def show_admin_page():
         st.session_state['show_admin'] = False
         st.rerun()
 
-# ========== 多模态本能论诊断页面 ==========
 
+# ========== 首页 ==========
+def show_home_page():
+    """首页"""
+    st.title("🏥 中医本能论智能诊疗系统")
+    st.markdown("*基于郭生白《生命本能系统论》构建*")
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("本能系统", "10大系统")
+    col2.metric("方剂", "60+")
+    col3.metric("疾病", "30+")
+    
+    st.info("""
+    ### 🎯 系统特色
+    
+    本系统基于**郭生白《生命本能系统论》**，融合多模态AI技术：
+    
+    1. **🔬 本能系统诊断** - 上传舌象，AI识别并映射到十大本能系统
+    2. **💊 方剂推荐** - 根据本能系统状态推荐调理方剂
+    3. **💬 智能问答** - 基于知识图谱的专业中医问答
+    
+    ### 📚 理论基础
+    
+    《生命本能系统论》认为人体生命活动由十大本能系统调控：
+    - 排异本能系统、自主调节系统、自塑本能系统
+    - 自我修复系统、自我更新系统、应变系统、共生性本能系统
+    """)
+
+
+# ========== 多模态诊断 ==========
 def show_multimodal_diagnosis():
-    """多模态本能论诊断页面（修复版）"""
+    """多模态本能论诊断页面"""
     st.header("🔬 本能系统多模态诊断")
     st.markdown("*上传舌象图片，AI结合《生命本能系统论》进行智能分析*")
     st.markdown("---")
     
-    # 获取API Key
     from config import get_api_keys
     api_keys = get_api_keys()
     
@@ -199,7 +218,6 @@ def show_multimodal_diagnosis():
         if all_text_symptoms:
             st.info(f"已选症状：{'、'.join(all_text_symptoms)}")
     
-    # 分析按钮
     st.markdown("---")
     analyze_col1, analyze_col2, analyze_col3 = st.columns([1, 2, 1])
     with analyze_col2:
@@ -222,14 +240,14 @@ def show_multimodal_diagnosis():
                     else:
                         st.error(f"分析失败：{result.get('error', '未知错误')}")
     
-    # 显示分析结果（修复后的完整显示）
+    # 显示分析结果
     if 'analysis_result' in st.session_state:
         result = st.session_state['analysis_result']
         
         st.markdown("---")
         st.header("📋 《生命本能系统论》诊断分析报告")
         
-        # ===== 1. 舌象特征 =====
+        # 舌象特征
         st.subheader("一、望舌诊察")
         if result.get("tongue_features"):
             st.markdown("**识别的舌象特征：**")
@@ -241,7 +259,7 @@ def show_multimodal_diagnosis():
         if result.get("text_symptoms"):
             st.markdown(f"**伴随症状：**{'、'.join(result['text_symptoms'])}")
         
-        # ===== 2. 本能系统分析 =====
+        # 本能系统分析
         st.subheader("二、本能系统分析")
         if result.get("instinct_systems"):
             for i, system in enumerate(result["instinct_systems"], 1):
@@ -252,7 +270,7 @@ def show_multimodal_diagnosis():
         else:
             st.info("根据舌象特征，未匹配到明确的本能系统异常")
         
-        # ===== 3. 病势综合判断 =====
+        # 病势综合判断
         st.subheader("三、病势综合判断")
         if result.get("disease_trends"):
             for trend in result["disease_trends"]:
@@ -262,32 +280,26 @@ def show_multimodal_diagnosis():
                     st.warning(f"🟡 {trend}")
                 else:
                     st.info(f"🔵 {trend}")
-        else:
-            st.info("暂无明确病势判断")
         
-        # ===== 4. 核心病机 =====
+        # 核心病机
         if result.get("pathogenesis"):
             st.subheader("四、核心病机")
             for pg in set(result["pathogenesis"]):
                 st.markdown(f"- {pg}")
         
-        # ===== 5. 治则治法 =====
+        # 治则治法
         st.subheader("五、治则治法")
         if result.get("treatment_principles"):
             for principle in set(result["treatment_principles"]):
                 st.success(f"💡 {principle}")
-        else:
-            st.info("暂无明确治则")
         
-        # ===== 6. 推荐方剂 =====
+        # 推荐方剂
         st.subheader("六、推荐方剂")
         if result.get("prescriptions"):
-            # 去重并限制数量
             unique_prescriptions = list(dict.fromkeys(result["prescriptions"]))[:8]
             
-            # 查询Neo4j获取方剂详情
-            from database import init_connections
             try:
+                from database import init_connections
                 driver, _ = init_connections()
                 with driver.session() as session:
                     for p_name in unique_prescriptions:
@@ -313,13 +325,10 @@ def show_multimodal_diagnosis():
                                         st.markdown(f"组成：{'、'.join(record['药物组成'])}")
                                 st.divider()
             except Exception as e:
-                # 如果Neo4j查询失败，直接显示方剂名
                 for p_name in unique_prescriptions:
                     st.markdown(f"- 💊 {p_name}")
-        else:
-            st.info("暂无推荐方剂")
         
-        # ===== 7. 调护建议 =====
+        # 调护建议
         st.subheader("七、调护建议")
         st.markdown("""
         1. **饮食调护**：顺应本能系统需求，外源性疾病宜清淡易消化，内源性疾病宜辨证施食
@@ -328,20 +337,21 @@ def show_multimodal_diagnosis():
         4. **运动调护**：适度运动，促进气血流通，但避免过劳伤正
         """)
         
-        # ===== 8. 原始AI识别结果（可选查看）=====
+        # 原始AI识别结果
         with st.expander("🔍 查看原始AI识别结果"):
             st.text(result.get("raw_ai_result", "无"))
-# ========== 药剂推荐界面（登录后）==========
 
 
+# ========== 方剂推荐 ==========
 def show_prescription_recommendation():
     """方剂推荐模块 - RAG架构"""
     st.header("💊 智能方剂推荐")
     st.markdown("*输入症状，系统结合知识图谱和AI进行智能推荐*")
     st.markdown("---")
     
-    # 获取Neo4j连接
     from config import get_api_keys
+    from database import init_connections
+    
     api_keys = get_api_keys()
     
     col1, col2 = st.columns([1, 2])
@@ -349,9 +359,7 @@ def show_prescription_recommendation():
     with col1:
         st.subheader("📝 症状输入")
         
-        # 获取所有症状
         try:
-            from database import init_connections
             driver, _ = init_connections()
             with driver.session() as session:
                 result = session.run("MATCH (s:症状) RETURN s.name AS name ORDER BY s.name")
@@ -360,7 +368,6 @@ def show_prescription_recommendation():
             all_symptoms = ["发热", "怕冷", "头疼", "咳嗽", "胸闷", "气短", "心慌", "失眠", 
                           "腹疼", "便秘", "腹泻", "没食欲", "口渴", "口苦", "口干", "疲劳"]
         
-        # 症状选择
         selected_symptoms = st.multiselect("选择症状（可多选）", all_symptoms)
         custom_input = st.text_input("或手动输入：", placeholder="例如：发烧 咳嗽 头疼")
         
@@ -369,7 +376,6 @@ def show_prescription_recommendation():
         if all_input_symptoms:
             st.info(f"**已选症状：**{'、'.join(all_input_symptoms)}")
         
-        # 分析按钮
         if st.button("🔍 智能推荐方剂", type="primary", use_container_width=True):
             if not all_input_symptoms:
                 st.error("请至少输入一个症状")
@@ -384,13 +390,11 @@ def show_prescription_recommendation():
             
             st.subheader("📊 分析结果")
             
-            # ===== Step 1: 从Neo4j查询相关疾病 =====
+            # 从Neo4j查询相关疾病
             try:
-                from database import init_connections
-                driver, client = init_connections()
+                driver, _ = init_connections()
                 
                 with driver.session() as session:
-                    # 查询匹配的疾病
                     query = """
                     MATCH (d:疾病)-[:临床表现]->(s:症状)
                     WHERE s.name IN $symptoms
@@ -404,9 +408,8 @@ def show_prescription_recommendation():
                 diseases = []
                 st.error(f"数据库查询失败：{e}")
             
-            # ===== Step 2: 查询相关方剂 =====
+            # 查询相关方剂
             all_prescriptions = []
-            disease_info = []
             
             if diseases:
                 st.markdown("### 🏥 可能的疾病（按匹配度排序）")
@@ -416,7 +419,6 @@ def show_prescription_recommendation():
                         st.markdown(f"**【{i}】{d['疾病']}** ({d['分类']})")
                         st.caption(f"匹配{d['匹配症状数']}个症状：{'、'.join(d['匹配的症状'])}")
                         
-                        # 查询该疾病的方剂
                         try:
                             with driver.session() as session:
                                 p_query = """
@@ -434,20 +436,18 @@ def show_prescription_recommendation():
                                         "疾病": d['疾病'],
                                         "方剂": p['方剂'],
                                         "治法": p['治法'],
-                                        "组成": p['药物组成'],
-                                        "匹配症状": d['匹配的症状']
+                                        "组成": p['药物组成']
                                     })
                         except Exception as e:
                             st.error(f"查询方剂失败：{e}")
                         
                         st.divider()
             
-            # ===== Step 3: RAG - 用AI生成专业解释 =====
+            # RAG - 用AI生成专业解释
             if all_prescriptions and api_keys.get("zhipuai_key"):
                 st.markdown("---")
                 st.markdown("### 🤖 AI智能分析（RAG架构）")
                 
-                # 构建上下文（从知识图谱检索的信息）
                 context = f"""
                 患者症状：{'、'.join(symptoms)}
                 
@@ -456,7 +456,6 @@ def show_prescription_recommendation():
                 推荐方剂：{', '.join(list(dict.fromkeys([p['方剂'] for p in all_prescriptions])))}
                 """
                 
-                # 调用智谱AI生成专业解释
                 try:
                     from zhipuai import ZhipuAI
                     ai_client = ZhipuAI(api_key=api_keys["zhipuai_key"])
@@ -490,11 +489,10 @@ def show_prescription_recommendation():
                 except Exception as e:
                     st.warning(f"AI分析生成失败：{e}")
             
-            # ===== Step 4: 显示详细方剂信息 =====
+            # 显示详细方剂信息
             st.markdown("---")
             st.markdown("### 💊 方剂详情")
             
-            # 去重显示
             shown_prescriptions = set()
             for p in all_prescriptions:
                 if p['方剂'] not in shown_prescriptions:
@@ -508,21 +506,20 @@ def show_prescription_recommendation():
                         with cols[1]:
                             st.markdown(f"**药物组成：**")
                             st.markdown(f"{'、'.join(p['组成']) if p['组成'] else '暂无组成信息'}")
-# ========== 智能问答界面（登录后）==========
 
+
+# ========== 智能问答 ==========
 def show_qa_module():
     """智能问答模块 - RAG架构"""
     st.header("💬 智能问答")
     st.markdown("*基于《生命本能系统论》知识图谱的AI问答系统*")
     st.markdown("---")
     
-    # 获取API Key和Neo4j连接
     from config import get_api_keys
     from database import init_connections
     
     api_keys = get_api_keys()
     
-    # 问题输入
     question = st.text_area(
         "请输入您的问题：",
         placeholder="例如：\n- 发烧怕冷是什么问题？\n- 麻黄汤有什么功效？\n- 舌质红苔黄腻是什么病势？",
@@ -538,24 +535,22 @@ def show_qa_module():
                 st.error("未配置智谱AI API Key")
             else:
                 with st.spinner("🤖 正在检索知识图谱并生成回答..."):
-                    # ===== Step 1: 从问题中提取关键词 =====
+                    # 提取关键词
                     keywords = extract_keywords(question)
                     
-                    # ===== Step 2: 从Neo4j检索相关知识 =====
+                    # 从Neo4j检索相关知识
                     knowledge_context = ""
                     retrieved_data = {
                         "symptoms": [],
                         "diseases": [],
-                        "prescriptions": [],
-                        "instinct_systems": []
+                        "prescriptions": []
                     }
                     
                     try:
                         driver, _ = init_connections()
                         with driver.session() as session:
-                            # 检索症状相关疾病
                             for keyword in keywords:
-                                # 查症状
+                                # 查症状相关疾病
                                 s_query = """
                                 MATCH (d:疾病)-[:临床表现]->(s:症状)
                                 WHERE s.name CONTAINS $keyword
@@ -628,7 +623,7 @@ def show_qa_module():
                         for item in retrieved_data["diseases"][:3]:
                             knowledge_context += f"- {item['疾病']}（{item['分类']}）：症状{'、'.join(item['症状'][:5])}...\n"
                     
-                    # ===== Step 3: 调用智谱AI生成回答（RAG）=====
+                    # 调用智谱AI生成回答
                     try:
                         from zhipuai import ZhipuAI
                         ai_client = ZhipuAI(api_key=api_keys["zhipuai_key"])
@@ -659,11 +654,9 @@ def show_qa_module():
                         
                         answer = response.choices[0].message.content
                         
-                        # 显示结果
                         st.success("回答：")
                         st.write(answer)
                         
-                        # 显示检索到的知识（可选）
                         with st.expander("🔍 查看知识图谱检索结果"):
                             st.markdown("**检索关键词：**" + "、".join(keywords))
                             st.json(retrieved_data)
@@ -671,9 +664,9 @@ def show_qa_module():
                     except Exception as e:
                         st.error(f"AI回答生成失败：{e}")
 
+
 def extract_keywords(text):
     """从问题中提取关键词"""
-    # 预定义的中医关键词库
     keyword_dict = {
         "症状": ["发热", "怕冷", "头疼", "咳嗽", "胸闷", "气短", "心慌", "失眠", 
                "腹疼", "便秘", "腹泻", "没食欲", "口渴", "口苦", "口干", "疲劳",
@@ -692,29 +685,35 @@ def extract_keywords(text):
             if word in text:
                 keywords.append(word)
     
-    # 如果没找到关键词，返回原问题的前几个词
     if not keywords:
         keywords = text[:20].split()
     
-    return list(set(keywords))[:5]  # 最多返回5个关键词
+    return list(set(keywords))[:5]
 
-# ========== 主页面（登录后）==========
+
+# ========== 主入口 ==========
+def main():
+    if st.session_state.get('show_admin', False) and is_admin():
+        show_admin_page()
+    elif not is_logged_in():
+        show_login_register_page()
+    else:
+        show_main_page()
+
+
 def show_main_page():
     """主页面"""
-    # 侧边栏
     user = get_current_user()
     st.sidebar.markdown(f"👤 **{user['name']}**")
     st.sidebar.caption(f"角色：{'管理员' if is_admin() else '普通用户'}")
     st.sidebar.markdown("---")
     
-    # 管理员入口
     if is_admin():
         if st.sidebar.button("🔧 用户管理", use_container_width=True):
             st.session_state['show_admin'] = True
             st.rerun()
         st.sidebar.markdown("---")
     
-    # 退出
     if st.sidebar.button("🚪 退出登录", use_container_width=True):
         logout()
         st.rerun()
@@ -722,59 +721,19 @@ def show_main_page():
     # 主菜单
     menu = st.sidebar.radio(
         "功能菜单",
-        ["🏠 首页", "🔬 本能系统诊断", "💊 方剂查询", "💬 智能问答"]
+        ["🏠 首页", "🔬 本能系统诊断", "💊 方剂推荐", "💬 智能问答"]
     )
     
+    # 注意：这里必须用 if 开头，不能用 elif
     if menu == "🏠 首页":
-        st.title("🏥 中医本能论智能诊疗系统")
-        st.markdown("*基于郭生白《生命本能系统论》构建*")
-        
-        col1, col2, col3 = st.columns(3)
-        col1.metric("本能系统", "10大系统")
-        col2.metric("方剂", "60+")
-        col3.metric("疾病", "30+")
-        
-        st.info("""
-        ### 🎯 系统特色
-        
-        本系统基于**郭生白《生命本能系统论》**，融合多模态AI技术：
-        
-        1. **🔬 本能系统诊断** - 上传舌象，AI识别并映射到十大本能系统
-        2. **💊 方剂推荐** - 根据本能系统状态推荐调理方剂
-        3. **💬 智能问答** - 基于知识图谱的专业中医问答
-        
-        ### 📚 理论基础
-        
-        《生命本能系统论》认为人体生命活动由十大本能系统调控：
-        - 排异本能系统
-        - 自主调节系统
-        - 自塑本能系统
-        - 自我修复系统
-        - 自我更新系统
-        - 应变系统
-        - 共生性本能系统
-        - ...
-        """)
-    
-elif menu == "🔬 本能系统诊断":
-    show_multimodal_diagnosis() 
+        show_home_page()
+    elif menu == "🔬 本能系统诊断":
+        show_multimodal_diagnosis()
+    elif menu == "💊 方剂推荐":
+        show_prescription_recommendation()
+    elif menu == "💬 智能问答":
+        show_qa_module()
 
-elif menu == "💊 方剂推荐":
-    show_prescription_recommendation()  
-
-elif menu == "💬 智能问答":
-    show_qa_module()  
-
-# ========== 主入口 ==========
-def main():
-    # 检查是否显示管理员页面
-    if st.session_state.get('show_admin', False) and is_admin():
-        show_admin_page()
-    # 检查是否已登录
-    elif not is_logged_in():
-        show_login_register_page()
-    else:
-        show_main_page()
 
 if __name__ == "__main__":
     main()
