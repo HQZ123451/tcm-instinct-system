@@ -173,7 +173,135 @@ def show_home_page():
 
 
 # ========== 多模态诊断 ==========
-        # 推荐方剂（修复版 - 显示组成药物）
+  def show_multimodal_diagnosis():
+    """多模态本能论诊断页面"""
+    st.header("🔬 本能系统多模态诊断")
+    st.markdown("*上传舌象图片，AI结合《生命本能系统论》进行智能分析*")
+    st.markdown("---")
+    
+    from config import get_api_keys
+    api_keys = get_api_keys()
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.subheader("📷 舌象采集")
+        
+        uploaded_file = st.file_uploader(
+            "请上传清晰的舌象照片",
+            type=['jpg', 'jpeg', 'png'],
+            help="建议在自然光下拍摄，避免使用滤镜"
+        )
+        
+        with st.expander("📖 拍摄指南"):
+            st.markdown("""
+            **拍摄要求：**
+            1. 在自然光或白色光源下拍摄
+            2. 舌头自然伸出，不要用力
+            3. 包含舌尖、舌中、舌根
+            4. 避免使用美颜/滤镜
+            5. 图片清晰，光线均匀
+            """)
+        
+        image = None
+        if uploaded_file:
+            image = preprocess_image(uploaded_file)
+            st.image(image, caption="上传的舌象图片", use_column_width=True)
+    
+    with col2:
+        st.subheader("📝 症状补充（选填）")
+        
+        common_symptoms = [
+            "发热", "怕冷", "头疼", "咳嗽", 
+            "胸闷", "气短", "心慌", "失眠",
+            "腹疼", "便秘", "腹泻", "没食欲",
+            "口渴", "口苦", "口干", "疲劳"
+        ]
+        
+        selected_symptoms = st.multiselect("选择症状", common_symptoms)
+        custom_symptoms = st.text_input("或手动输入：", placeholder="例如：头疼 口渴 失眠")
+        
+        all_text_symptoms = selected_symptoms + (custom_symptoms.split() if custom_symptoms else [])
+        
+        if all_text_symptoms:
+            st.info(f"已选症状：{'、'.join(all_text_symptoms)}")
+    
+    st.markdown("---")
+    analyze_col1, analyze_col2, analyze_col3 = st.columns([1, 2, 1])
+    with analyze_col2:
+        if st.button("🔍 开始本能系统分析", type="primary", use_container_width=True):
+            if not uploaded_file:
+                st.error("请先上传舌象图片")
+            elif not api_keys.get("dashscope_key"):
+                st.error("未配置通义千问API Key")
+            else:
+                with st.spinner("🤖 AI正在分析舌象并映射本能系统..."):
+                    result = full_multimodal_analysis(
+                        image, 
+                        all_text_symptoms or None,
+                        api_keys["dashscope_key"]
+                    )
+                    
+                    if result["success"]:
+                        st.session_state['analysis_result'] = result
+                        st.success("✅ 分析完成！")
+                    else:
+                        st.error(f"分析失败：{result.get('error', '未知错误')}")
+    
+    # 显示分析结果
+    if 'analysis_result' in st.session_state:
+        result = st.session_state['analysis_result']
+        
+        st.markdown("---")
+        st.header("📋 《生命本能系统论》诊断分析报告")
+        
+        # 舌象特征
+        st.subheader("一、望舌诊察")
+        if result.get("tongue_features"):
+            st.markdown("**识别的舌象特征：**")
+            for feature in result["tongue_features"]:
+                st.markdown(f"- ✅ {feature}")
+        else:
+            st.warning("未识别到舌象特征")
+        
+        if result.get("text_symptoms"):
+            st.markdown(f"**伴随症状：**{'、'.join(result['text_symptoms'])}")
+        
+        # 本能系统分析
+        st.subheader("二、本能系统分析")
+        if result.get("instinct_systems"):
+            for i, system in enumerate(result["instinct_systems"], 1):
+                with st.container():
+                    st.markdown(f"**{i}. {system['name']}**")
+                    st.caption(f"病机：{system.get('description', '暂无描述')}")
+                    st.info(f"病势类型：{system.get('trend', '未知')}")
+        else:
+            st.info("根据舌象特征，未匹配到明确的本能系统异常")
+        
+        # 病势综合判断
+        st.subheader("三、病势综合判断")
+        if result.get("disease_trends"):
+            for trend in result["disease_trends"]:
+                if "外源" in trend:
+                    st.error(f"🔴 {trend}")
+                elif "内源" in trend:
+                    st.warning(f"🟡 {trend}")
+                else:
+                    st.info(f"🔵 {trend}")
+        
+        # 核心病机
+        if result.get("pathogenesis"):
+            st.subheader("四、核心病机")
+            for pg in set(result["pathogenesis"]):
+                st.markdown(f"- {pg}")
+        
+        # 治则治法
+        st.subheader("五、治则治法")
+        if result.get("treatment_principles"):
+            for principle in set(result["treatment_principles"]):
+                st.success(f"💡 {principle}")
+        
+            # 推荐方剂（修复版 - 显示组成药物）
         st.subheader("六、推荐方剂")
         if result.get("prescriptions"):
             unique_prescriptions = list(dict.fromkeys(result["prescriptions"]))[:8]
@@ -228,6 +356,18 @@ def show_home_page():
         else:
             st.info("暂无推荐方剂")
 
+        # 调护建议
+        st.subheader("七、调护建议")
+        st.markdown("""
+        1. **饮食调护**：顺应本能系统需求，外源性疾病宜清淡易消化，内源性疾病宜辨证施食
+        2. **起居调护**：保证充足睡眠，利于自主调节系统恢复
+        3. **情志调护**：保持平和心态，避免过度应激影响应变系统
+        4. **运动调护**：适度运动，促进气血流通，但避免过劳伤正
+        """)
+        
+        # 原始AI识别结果
+        with st.expander("🔍 查看原始AI识别结果"):
+            st.text(result.get("raw_ai_result", "无"))
 
 # ========== 方剂推荐 ==========
 def show_prescription_recommendation():
