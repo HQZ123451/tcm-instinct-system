@@ -11,7 +11,8 @@ from database import (
     delete_user,
     update_user_role,
     get_neo4j_driver,
-    update_last_login
+    update_last_login,
+    verify_login
 )
 from auth import login, logout, is_logged_in, is_admin, get_current_user
 from multimodal import full_multimodal_analysis, preprocess_image
