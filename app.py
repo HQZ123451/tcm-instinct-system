@@ -173,7 +173,7 @@ def show_home_page():
 
 
 # ========== 多模态诊断 ==========
-  def show_multimodal_diagnosis():
+ def show_multimodal_diagnosis():
     """多模态本能论诊断页面"""
     st.header("🔬 本能系统多模态诊断")
     st.markdown("*上传舌象图片，AI结合《生命本能系统论》进行智能分析*")
@@ -255,7 +255,7 @@ def show_home_page():
         st.markdown("---")
         st.header("📋 《生命本能系统论》诊断分析报告")
         
-        # 舌象特征
+        # 1. 舌象特征
         st.subheader("一、望舌诊察")
         if result.get("tongue_features"):
             st.markdown("**识别的舌象特征：**")
@@ -267,7 +267,7 @@ def show_home_page():
         if result.get("text_symptoms"):
             st.markdown(f"**伴随症状：**{'、'.join(result['text_symptoms'])}")
         
-        # 本能系统分析
+        # 2. 本能系统分析
         st.subheader("二、本能系统分析")
         if result.get("instinct_systems"):
             for i, system in enumerate(result["instinct_systems"], 1):
@@ -278,7 +278,7 @@ def show_home_page():
         else:
             st.info("根据舌象特征，未匹配到明确的本能系统异常")
         
-        # 病势综合判断
+        # 3. 病势综合判断
         st.subheader("三、病势综合判断")
         if result.get("disease_trends"):
             for trend in result["disease_trends"]:
@@ -289,24 +289,23 @@ def show_home_page():
                 else:
                     st.info(f"🔵 {trend}")
         
-        # 核心病机
+        # 4. 核心病机
         if result.get("pathogenesis"):
             st.subheader("四、核心病机")
             for pg in set(result["pathogenesis"]):
                 st.markdown(f"- {pg}")
         
-        # 治则治法
+        # 5. 治则治法
         st.subheader("五、治则治法")
         if result.get("treatment_principles"):
             for principle in set(result["treatment_principles"]):
                 st.success(f"💡 {principle}")
         
-            # 推荐方剂（修复版 - 显示组成药物）
+        # 6. 推荐方剂（从Neo4j查询组成）
         st.subheader("六、推荐方剂")
         if result.get("prescriptions"):
             unique_prescriptions = list(dict.fromkeys(result["prescriptions"]))[:8]
             
-            # 从Neo4j查询方剂详情
             try:
                 driver = get_neo4j_driver()
                 with driver.session() as session:
@@ -337,26 +336,20 @@ def show_home_page():
                                 with cols[1]:
                                     if record['药物组成']:
                                         st.markdown("**药物组成：**")
-                                        # 显示为标签样式
-                                        drug_html = " ".join([
-                                            f'<span style="background:#e8f4f8;padding:4px 8px;border-radius:4px;margin:2px;display:inline-block;">{d}</span>' 
-                                            for d in record['药物组成']
-                                        ])
-                                        st.markdown(drug_html, unsafe_allow_html=True)
+                                        for drug in record['药物组成']:
+                                            st.markdown(f"- {drug}")
                                     else:
                                         st.caption("暂无组成信息")
                         else:
-                            # 如果Neo4j中没有，只显示名称
                             st.markdown(f"- 💊 {p_name}（暂无详细信息）")
             except Exception as e:
                 st.warning(f"查询方剂详情失败：{e}")
-                # 降级显示
                 for p_name in unique_prescriptions:
                     st.markdown(f"- 💊 {p_name}")
         else:
             st.info("暂无推荐方剂")
-
-        # 调护建议
+        
+        # 7. 调护建议
         st.subheader("七、调护建议")
         st.markdown("""
         1. **饮食调护**：顺应本能系统需求，外源性疾病宜清淡易消化，内源性疾病宜辨证施食
@@ -365,7 +358,7 @@ def show_home_page():
         4. **运动调护**：适度运动，促进气血流通，但避免过劳伤正
         """)
         
-        # 原始AI识别结果
+        # 8. 原始AI识别结果
         with st.expander("🔍 查看原始AI识别结果"):
             st.text(result.get("raw_ai_result", "无"))
 
