@@ -60,7 +60,7 @@ def show_login_register_page():
                     st.error("用户名或密码错误")
         
         with col2:
-            st.info("**默认管理员账号**\n- 用户名：`admin`\n- 密码：`admin123`")
+            st.info("**提示**\n- 首次使用请注册新账号\n- 已有账号请直接登录") 
     
     with tab_register:
         st.subheader("新用户注册")
