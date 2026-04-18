@@ -37,8 +37,8 @@ def show_login_register_page():
         st.subheader("用户登录")
         col1, col2 = st.columns([2, 1])
         with col1:
-            login_username = st.text_input("用户名", key="login_user")
-            login_password = st.text_input("密码", type="password", key="login_pass")
+            login_username = st.text_input("用户名", key="login_tab_username_input")
+            login_password = st.text_input("密码", type="password", key="login_tab_password_input")
             
             if st.button("登录", type="primary", use_container_width=True):
                 success, user_info = verify_login(login_username, login_password)
@@ -56,15 +56,15 @@ def show_login_register_page():
                     st.error("用户名或密码错误")
         
         with col2:
-            st.info("**提示**\n- 首次使用请注册新账号\n- 已有账号请直接登录")
+            st.info("**默认管理员账号**\n- 用户名：`admin`\n- 密码：`admin123`")
     
     with tab_register:
         st.subheader("新用户注册")
-        reg_username = st.text_input("用户名*", key="reg_user")
-        reg_password = st.text_input("密码*", type="password", key="reg_pass")
-        reg_password2 = st.text_input("确认密码*", type="password", key="reg_pass2")
-        reg_name = st.text_input("显示名称*", key="reg_name")
-        reg_email = st.text_input("邮箱（选填）", key="reg_email")
+        reg_username = st.text_input("用户名*", key="register_tab_username")
+        reg_password = st.text_input("密码*", type="password", key="register_tab_password")
+        reg_password2 = st.text_input("确认密码*", type="password", key="register_tab_password2")
+        reg_name = st.text_input("显示名称*", key="register_tab_name")
+        reg_email = st.text_input("邮箱（选填）", key="register_tab_email")
         
         if st.button("立即注册", type="primary", use_container_width=True):
             if not all([reg_username, reg_password, reg_name]):
@@ -150,7 +150,7 @@ def show_home_page():
     """)
 
 
-
+# ========== 多模态诊断（显示方剂组成）==========
 # ========== 多模态诊断（显示方剂组成）==========
 def show_multimodal_diagnosis():
     st.header("🔬 本能系统多模态诊断")
