@@ -18,6 +18,11 @@ from auth import login, logout, is_logged_in, is_admin, get_current_user
 from multimodal import full_multimodal_analysis, preprocess_image
 from config import get_api_keys
 
+# 导入知识图谱可视化所需库
+from pyvis.network import Network
+import pandas as pd
+import streamlit.components.v1 as components
+
 # 初始化
 init_db()
 
@@ -137,16 +142,18 @@ def show_home_page():
     st.title("🏥 中医本能论智能诊疗系统")
     st.markdown("*基于郭生白《生命本能系统论》构建*")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("本能系统", "10大系统")
     col2.metric("方剂", "60+")
     col3.metric("疾病", "30+")
-    
+    col4.metric("知识节点", "500+")
+
     st.info("""
     ### 🎯 系统特色
     1. **🔬 本能系统多模态诊断** - 望（舌象/体象）+ 问（症状/问诊），AI综合映射到十大本能系统
     2. **💊 方剂推荐** - 根据本能系统状态推荐调理方剂
     3. **💬 智能问答** - 基于知识图谱的专业中医问答
+    4. **🕸️ 知识图谱可视化** - 交互式探索知识图谱结构
     """)
 
 
@@ -349,6 +356,336 @@ def show_multimodal_diagnosis():
 
 
 
+
+
+# ========== 知识图谱可视化 ==========
+def show_graph_visualization():
+    """知识图谱可视化页面 - 展示Neo4j知识图谱的交互式可视化效果"""
+    st.header("🕸️ 知识图谱可视化")
+    st.markdown("*探索《生命本能系统论》知识图谱的结构与关联*")
+    st.markdown("---")
+
+    # 获取数据库连接
+    try:
+        driver = get_neo4j_driver()
+    except Exception as e:
+        st.error(f"数据库连接失败：{e}")
+        return
+
+    # 获取图谱统计信息
+    try:
+        with driver.session() as session:
+            # 总节点数
+            node_count = session.run("MATCH (n) RETURN count(n) AS count").single()["count"]
+            # 总关系数
+            rel_count = session.run("MATCH ()-[r]->() RETURN count(r) AS count").single()["count"]
+            # 各类型节点数量
+            node_types = list(session.run("""
+                MATCH (n)
+                RETURN labels(n)[0] AS node_type, count(n) AS count
+                ORDER BY count DESC
+            """))
+            # 各类型关系数量
+            rel_types = list(session.run("""
+                MATCH ()-[r]->()
+                RETURN type(r) AS rel_type, count(r) AS count
+                ORDER BY count DESC
+            """))
+    except Exception as e:
+        st.error(f"获取统计信息失败：{e}")
+        node_count = rel_count = 0
+        node_types = rel_types = []
+
+    # 显示统计信息
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("总节点数", node_count)
+    with col2:
+        st.metric("总关系数", rel_count)
+    with col3:
+        st.metric("节点类型", len(node_types))
+    with col4:
+        st.metric("关系类型", len(rel_types))
+
+    st.markdown("---")
+
+    # 创建左右布局
+    left_col, right_col = st.columns([1, 3])
+
+    with left_col:
+        st.markdown("### 🔍 筛选条件")
+
+        # 节点类型筛选
+        st.markdown("**节点类型**")
+        node_type_options = ['本能系统', '疾病', '症状', '方剂', '药物', '治法', '外因', '理论概念']
+        selected_node_types = []
+        for node_type in node_type_options:
+            if st.checkbox(node_type, value=True, key=f"node_{node_type}"):
+                selected_node_types.append(node_type)
+
+        # 关系类型筛选
+        st.markdown("**关系类型**")
+        rel_type_options = ['包含', '导致', '临床表现', '属于', '治疗', '组成']
+        selected_rel_types = []
+        for rel_type in rel_type_options:
+            if st.checkbox(rel_type, value=True, key=f"rel_{rel_type}"):
+                selected_rel_types.append(rel_type)
+
+        # 显示数量限制
+        max_nodes = st.slider("最大显示节点数", 10, 300, 100, 10)
+
+        # 物理引擎开关
+        physics_enabled = st.toggle("启用物理引擎", value=True,
+                                    help="关闭后可手动固定节点位置")
+
+        # 刷新按钮
+        refresh = st.button("🔄 刷新图谱", type="primary", use_container_width=True)
+
+        # 图例说明
+        st.markdown("---")
+        st.markdown("### 📌 图例说明")
+
+        # 节点颜色图例
+        color_map = {
+            '本能系统': '#FF6B6B',
+            '疾病': '#FFA502',
+            '症状': '#FFD700',
+            '方剂': '#2ED573',
+            '药物': '#1E90FF',
+            '治法': '#A55EEA',
+            '外因': '#FF9F43',
+            '理论概念': '#74B9FF'
+        }
+
+        st.markdown("**节点类型**")
+        for node_type, color in color_map.items():
+            st.markdown(
+                f"<span style='display:inline-block;width:12px;height:12px;"
+                f"background-color:{color};border-radius:50%;margin-right:8px;'></span>{node_type}",
+                unsafe_allow_html=True
+            )
+
+        # 关系颜色图例
+        edge_color_map = {
+            '包含': '#3498DB',
+            '导致': '#E74C3C',
+            '临床表现': '#F39C12',
+            '属于': '#9B59B6',
+            '治疗': '#27AE60',
+            '组成': '#1ABC9C'
+        }
+
+        st.markdown("**关系类型**")
+        for rel_type, color in edge_color_map.items():
+            st.markdown(
+                f"<span style='display:inline-block;width:20px;height:3px;"
+                f"background-color:{color};margin-right:8px;vertical-align:middle;'></span>{rel_type}",
+                unsafe_allow_html=True
+            )
+
+    with right_col:
+        st.markdown("### 🕸️ 知识图谱可视化")
+
+        # 查询数据
+        try:
+            with driver.session() as session:
+                # 构建节点查询
+                label_filter = ""
+                if selected_node_types:
+                    label_conditions = [f"'{label}' IN labels(n)" for label in selected_node_types]
+                    label_filter = "WHERE " + " OR ".join(label_conditions)
+
+                node_query = f"""
+                    MATCH (n)
+                    {label_filter}
+                    RETURN id(n) AS id, labels(n) AS labels, n.name AS name, n
+                    LIMIT {max_nodes}
+                """
+                nodes_data = list(session.run(node_query))
+                node_ids = [node['id'] for node in nodes_data]
+
+                # 查询关系
+                edges_data = []
+                if node_ids:
+                    rel_filter = ""
+                    if selected_rel_types:
+                        rel_conditions = [f"type(r) = '{rel_type}'" for rel_type in selected_rel_types]
+                        rel_filter = "AND (" + " OR ".join(rel_conditions) + ")"
+
+                    rel_query = f"""
+                        MATCH (a)-[r]->(b)
+                        WHERE id(a) IN {node_ids} AND id(b) IN {node_ids}
+                        {rel_filter}
+                        RETURN id(a) AS source, id(b) AS target, type(r) AS type, r
+                    """
+                    edges_data = list(session.run(rel_query))
+        except Exception as e:
+            st.error(f"查询图谱数据失败：{e}")
+            nodes_data = []
+            edges_data = []
+
+        if len(nodes_data) == 0:
+            st.info("未找到符合条件的节点，请调整筛选条件")
+        else:
+            # 创建Pyvis网络图
+            net = Network(
+                height="600px",
+                width="100%",
+                bgcolor="#ffffff",
+                font_color="#1A202C",
+                heading=""
+            )
+
+            # 配置物理引擎
+            if physics_enabled:
+                net.set_options("""
+                {
+                    "physics": {
+                        "enabled": true,
+                        "barnesHut": {
+                            "gravitationalConstant": -2000,
+                            "centralGravity": 0.3,
+                            "springLength": 95,
+                            "springConstant": 0.04,
+                            "damping": 0.09,
+                            "avoidOverlap": 0.1
+                        },
+                        "stabilization": {
+                            "enabled": true,
+                            "iterations": 1000
+                        }
+                    },
+                    "interaction": {
+                        "hover": true,
+                        "tooltipDelay": 200,
+                        "hideEdgesOnDrag": false,
+                        "navigationButtons": true,
+                        "keyboard": true
+                    },
+                    "manipulation": {
+                        "enabled": true
+                    }
+                }
+                """)
+            else:
+                net.set_options("""
+                {
+                    "physics": {"enabled": false},
+                    "interaction": {
+                        "hover": true,
+                        "tooltipDelay": 200,
+                        "navigationButtons": true,
+                        "keyboard": true
+                    }
+                }
+                """)
+
+            # 添加节点
+            for node in nodes_data:
+                node_id = node['id']
+                labels = node['labels']
+                name = node.get('name', f"Node_{node_id}")
+                label_type = labels[0] if labels else 'Unknown'
+                color = color_map.get(label_type, '#95A5A6')
+
+                # 构建节点标题
+                title = f"类型: {label_type}<br>名称: {name}"
+                if 'description' in node['n']:
+                    desc = node['n']['description']
+                    if len(desc) > 100:
+                        desc = desc[:100] + "..."
+                    title += f"<br>描述: {desc}"
+
+                net.add_node(
+                    node_id,
+                    label=name,
+                    title=title,
+                    color=color,
+                    size=25 if label_type == '本能系统' else 20,
+                    font={'size': 14, 'color': '#1A202C'}
+                )
+
+            # 添加边
+            for edge in edges_data:
+                source = edge['source']
+                target = edge['target']
+                rel_type = edge['type']
+                color = edge_color_map.get(rel_type, '#95A5A6')
+
+                net.add_edge(
+                    source,
+                    target,
+                    label=rel_type,
+                    title=f"关系: {rel_type}",
+                    color=color,
+                    width=2,
+                    arrows={'to': {'enabled': True, 'scaleFactor': 0.5}}
+                )
+
+            # 保存并显示
+            net.save_graph("temp_graph.html")
+            with open("temp_graph.html", "r", encoding="utf-8") as f:
+                html_content = f.read()
+
+            components.html(html_content, height=650)
+            st.caption(f"显示 {len(nodes_data)} 个节点，{len(edges_data)} 条关系")
+
+    # 节点详情查询
+    st.markdown("---")
+    st.markdown("### 🔎 节点详情查询")
+
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        search_name = st.text_input("输入节点名称", placeholder="例如：排异系统")
+        search_button = st.button("查询", type="primary")
+
+    with col2:
+        if search_button and search_name:
+            try:
+                with driver.session() as session:
+                    # 查询节点信息
+                    node_info = session.run("""
+                        MATCH (n {name: $name})
+                        RETURN n, labels(n) AS labels
+                    """, name=search_name).single()
+
+                    if node_info:
+                        node = node_info['n']
+                        labels = node_info['labels']
+
+                        st.markdown(f"**节点名称**: {node['name']}")
+                        st.markdown(f"**节点类型**: {', '.join(labels)}")
+
+                        # 显示属性
+                        props = {k: v for k, v in node.items() if k != 'name'}
+                        if props:
+                            st.markdown("**属性信息**:")
+                            st.json(props)
+
+                        # 查询相关关系
+                        relationships = list(session.run("""
+                            MATCH (n {name: $name})-[r]-(m)
+                            RETURN type(r) AS rel_type,
+                                   m.name AS related_name,
+                                   labels(m) AS related_labels,
+                                   startNode(r).name = $name AS is_outgoing
+                        """, name=search_name))
+
+                        if relationships:
+                            st.markdown("**关联关系**:")
+                            rel_df = pd.DataFrame(relationships)
+                            rel_df['方向'] = rel_df['is_outgoing'].apply(lambda x: '→' if x else '←')
+                            rel_df['关联节点'] = rel_df['related_name'] + ' (' + rel_df['related_labels'].apply(lambda x: x[0] if x else 'Unknown') + ')'
+                            st.dataframe(
+                                rel_df[['rel_type', '方向', '关联节点']].rename(columns={'rel_type': '关系类型'}),
+                                use_container_width=True
+                            )
+                    else:
+                        st.warning(f"未找到名称为 '{search_name}' 的节点")
+
+            except Exception as e:
+                st.error(f"查询失败: {e}")
 
 
 # ========== 方剂推荐 ==========
@@ -571,8 +908,14 @@ def show_main_page():
         logout()
         st.rerun()
     
-    menu = st.sidebar.radio("功能菜单", ["🏠 首页", "🔬 本能系统诊断", "💊 方剂推荐", "💬 智能问答"])
-    
+    menu = st.sidebar.radio("功能菜单", [
+        "🏠 首页",
+        "🔬 本能系统诊断",
+        "💊 方剂推荐",
+        "💬 智能问答",
+        "🕸️ 知识图谱可视化"
+    ])
+
     if menu == "🏠 首页":
         show_home_page()
     elif menu == "🔬 本能系统诊断":
@@ -581,6 +924,8 @@ def show_main_page():
         show_prescription_recommendation()
     elif menu == "💬 智能问答":
         show_qa_module()
+    elif menu == "🕸️ 知识图谱可视化":
+        show_graph_visualization()
 
 
 if __name__ == "__main__":
