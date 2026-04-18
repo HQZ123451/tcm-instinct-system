@@ -37,8 +37,8 @@ def show_login_register_page():
         st.subheader("用户登录")
         col1, col2 = st.columns([2, 1])
         with col1:
-            login_username = st.text_input("用户名", key="login_tab_username_input")
-            login_password = st.text_input("密码", type="password", key="login_tab_password_input")
+            login_username = st.text_input("用户名")
+            login_password = st.text_input("密码", type="password")
             
             if st.button("登录", type="primary", use_container_width=True):
                 success, user_info = verify_login(login_username, login_password)
@@ -60,11 +60,11 @@ def show_login_register_page():
     
     with tab_register:
         st.subheader("新用户注册")
-        reg_username = st.text_input("用户名*", key="register_tab_username")
-        reg_password = st.text_input("密码*", type="password", key="register_tab_password")
-        reg_password2 = st.text_input("确认密码*", type="password", key="register_tab_password2")
-        reg_name = st.text_input("显示名称*", key="register_tab_name")
-        reg_email = st.text_input("邮箱（选填）", key="register_tab_email")
+        reg_username = st.text_input("用户名*")
+        reg_password = st.text_input("密码*", type="password")
+        reg_password2 = st.text_input("确认密码*", type="password")
+        reg_name = st.text_input("显示名称*")
+        reg_email = st.text_input("邮箱（选填）")
         
         if st.button("立即注册", type="primary", use_container_width=True):
             if not all([reg_username, reg_password, reg_name]):
