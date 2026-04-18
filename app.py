@@ -37,8 +37,8 @@ def show_login_register_page():
         st.subheader("用户登录")
         col1, col2 = st.columns([2, 1])
         with col1:
-            login_username = st.text_input("用户名")
-            login_password = st.text_input("密码", type="password")
+            login_username = st.text_input("用户名", key="page_login_username")
+            login_password = st.text_input("密码", type="password", key="page_login_password")
             
             if st.button("登录", type="primary", use_container_width=True):
                 success, user_info = verify_login(login_username, login_password)
@@ -56,15 +56,15 @@ def show_login_register_page():
                     st.error("用户名或密码错误")
         
         with col2:
-            st.info("**默认管理员账号**\n- 用户名：`admin`\n- 密码：`admin123`")
+            st.info("**提示**\n- 首次使用请注册新账号\n- 已有账号请直接登录")
     
     with tab_register:
         st.subheader("新用户注册")
-        reg_username = st.text_input("用户名*")
-        reg_password = st.text_input("密码*", type="password")
-        reg_password2 = st.text_input("确认密码*", type="password")
-        reg_name = st.text_input("显示名称*")
-        reg_email = st.text_input("邮箱（选填）")
+        reg_username = st.text_input("用户名*", key="page_reg_username")
+        reg_password = st.text_input("密码*", type="password", key="page_reg_password")
+        reg_password2 = st.text_input("确认密码*", type="password", key="page_reg_password2")
+        reg_name = st.text_input("显示名称*", key="page_reg_name")
+        reg_email = st.text_input("邮箱（选填）", key="page_reg_email")
         
         if st.button("立即注册", type="primary", use_container_width=True):
             if not all([reg_username, reg_password, reg_name]):
@@ -150,7 +150,6 @@ def show_home_page():
     """)
 
 
-# ========== 多模态诊断（显示方剂组成）==========
 # ========== 多模态诊断（显示方剂组成）==========
 def show_multimodal_diagnosis():
     st.header("🔬 本能系统多模态诊断")
@@ -249,242 +248,6 @@ def show_multimodal_diagnosis():
 
 
 
-
-
-# ========== 方剂推荐 ==========
-def show_prescription_recommendation():
-    st.header("💊 智能方剂推荐")
-    st.markdown("*输入症状，系统结合知识图谱和AI进行智能推荐*")
-    st.markdown("---")
-    
-    try:
-        driver = get_neo4j_driver()
-    except Exception as e:
-        st.error(f"数据库连接失败：{e}")
-        return
-    
-    try:
-        from zhipuai import ZhipuAI
-        api_key = st.secrets.get("API_KEY", "")
-        zhipu_client = ZhipuAI(api_key=api_key) if api_key else None
-    except:
-        zhipu_client = None
-    
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        st.subheader("📝 症状输入")
-        
-        try:
-            with driver.session() as session:
-                result = session.run("MATCH (s:症状) RETURN s.name AS name ORDER BY s.name")
-                all_symptoms = [r["name"] for r in result]
-        except:
-            all_symptoms = []
-        
-        selected_symptoms = st.multiselect("选择症状（可多选）", all_symptoms)
-        custom_input = st.text_input("或手动输入：", placeholder="例如：发烧 咳嗽 头疼")
-        all_input_symptoms = selected_symptoms + (custom_input.replace("，", " ").split() if custom_input else [])
-        
-        if all_input_symptoms:
-            st.info(f"**已选症状：**{'、'.join(all_input_symptoms)}")
-        
-        if st.button("🔍 智能推荐方剂", type="primary", use_container_width=True):
-            if not all_input_symptoms:
-                st.error("请至少输入一个症状")
-            else:
-                with st.spinner("🧠 正在分析..."):
-                    st.session_state['prescription_symptoms'] = all_input_symptoms
-                    st.rerun()
-    
-    with col2:
-        if 'prescription_symptoms' in st.session_state:
-            symptoms = st.session_state['prescription_symptoms']
-            st.subheader("📊 分析结果")
-            
-            # 查询疾病
-            diseases = []
-            try:
-                with driver.session() as session:
-                    query = """
-                    MATCH (d:疾病)-[:临床表现]->(s:症状)
-                    WHERE s.name IN $symptoms
-                    WITH d, count(s) AS 匹配症状数, collect(s.name) AS 匹配的症状
-                    ORDER BY 匹配症状数 DESC
-                    RETURN d.name AS 疾病, d.分类 AS 分类, 匹配症状数, 匹配的症状
-                    LIMIT 5
-                    """
-                    diseases = list(session.run(query, symptoms=symptoms))
-            except Exception as e:
-                st.error(f"查询失败：{e}")
-            
-            all_prescriptions = []
-            
-            if diseases:
-                st.markdown("### 🏥 可能的疾病")
-                for i, d in enumerate(diseases, 1):
-                    st.markdown(f"**【{i}】{d['疾病']}** ({d['分类']})")
-                    st.caption(f"匹配{d['匹配症状数']}个症状")
-                    
-                    # 查询方剂
-                    try:
-                        with driver.session() as session:
-                            p_query = """
-                            MATCH (f:方剂)-[:治疗]->(d:疾病 {name: $disease})
-                            OPTIONAL MATCH (f)-[:组成]->(m:药物)
-                            OPTIONAL MATCH (f)-[:属于]->(t:治法)
-                            RETURN f.name AS 方剂, t.name AS 治法, 
-                                   collect(DISTINCT m.name) AS 药物组成
-                            """
-                            prescriptions = list(session.run(p_query, disease=d['疾病']))
-                            for p in prescriptions:
-                                all_prescriptions.append({
-                                    "疾病": d['疾病'],
-                                    "方剂": p['方剂'],
-                                    "治法": p['治法'],
-                                    "组成": p['药物组成']
-                                })
-                    except Exception as e:
-                        st.error(f"查询方剂失败：{e}")
-                    
-                    st.divider()
-            
-            # 显示方剂详情
-            if all_prescriptions:
-                st.markdown("### 💊 方剂详情")
-                shown = set()
-                for p in all_prescriptions:
-                    if p['方剂'] not in shown:
-                        shown.add(p['方剂'])
-                        with st.expander(f"{p['方剂']}（治疗{p['疾病']}）"):
-                            st.markdown(f"**治法：**{p['治法'] or '暂无'}")
-                            if p['组成']:
-                                st.markdown("**药物组成：**")
-                                for drug in p['组成']:
-                                    st.markdown(f"- {drug}")
-                            else:
-                                st.caption("暂无组成信息")
-
-
-# ========== 智能问答 ==========
-def show_qa_module():
-    st.header("💬 智能问答")
-    st.markdown("*基于《生命本能系统论》知识图谱的AI问答系统*")
-    st.markdown("---")
-    
-    try:
-        driver = get_neo4j_driver()
-    except Exception as e:
-        st.error(f"数据库连接失败：{e}")
-        return
-    
-    try:
-        from zhipuai import ZhipuAI
-        api_key = st.secrets.get("API_KEY", "")
-        zhipu_client = ZhipuAI(api_key=api_key) if api_key else None
-    except:
-        st.error("智谱AI未配置")
-        return
-    
-    question = st.text_area("请输入您的问题：", placeholder="例如：发烧怕冷是什么问题？", height=100)
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        if st.button("🚀 提问", type="primary", use_container_width=True):
-            if not question:
-                st.error("请输入问题")
-            else:
-                with st.spinner("🤖 正在检索知识图谱..."):
-                    # 提取关键词
-                    keywords = []
-                    keyword_list = ["发热", "怕冷", "头疼", "咳嗽", "麻黄汤", "桂枝汤", "高血压", "糖尿病"]
-                    for kw in keyword_list:
-                        if kw in question:
-                            keywords.append(kw)
-                    
-                    # 检索知识图谱
-                    context = ""
-                    try:
-                        with driver.session() as session:
-                            for kw in keywords:
-                                # 查疾病
-                                result = session.run("""
-                                    MATCH (d:疾病) WHERE d.name CONTAINS $kw
-                                    OPTIONAL MATCH (f:方剂)-[:治疗]->(d)
-                                    RETURN d.name AS 疾病, collect(f.name) AS 方剂
-                                    LIMIT 2
-                                """, kw=kw)
-                                for r in result:
-                                    context += f"疾病：{r['疾病']}，治疗方剂：{', '.join(r['方剂'][:3])}\n"
-                    except Exception as e:
-                        context = "检索失败"
-                    
-                    # RAG生成回答
-                    try:
-                        prompt = f"""你是基于《生命本能系统论》的中医专家。
-                        
-用户问题：{question}
-
-知识图谱检索结果：
-{context}
-
-请根据以上信息回答，结合本能系统论理论。"""
-                        
-                        response = zhipu_client.chat.completions.create(
-                            model="glm-4-flash",
-                            messages=[
-                                {"role": "system", "content": "你是精通《生命本能系统论》的中医专家"},
-                                {"role": "user", "content": prompt}
-                            ]
-                        )
-                        
-                        st.success("回答：")
-                        st.write(response.choices[0].message.content)
-                        
-                    except Exception as e:
-                        st.error(f"AI生成失败：{e}")
-
-
-# ========== 主入口 ==========
-def main():
-    if st.session_state.get('show_admin', False) and is_admin():
-        show_admin_page()
-    elif not is_logged_in():
-        show_login_register_page()
-    else:
-        show_main_page()
-
-
-def show_main_page():
-    user = get_current_user()
-    st.sidebar.markdown(f"👤 **{user['name']}**")
-    st.sidebar.caption(f"角色：{'管理员' if is_admin() else '普通用户'}")
-    st.sidebar.markdown("---")
-    
-    if is_admin():
-        if st.sidebar.button("🔧 用户管理", use_container_width=True):
-            st.session_state['show_admin'] = True
-            st.rerun()
-        st.sidebar.markdown("---")
-    
-    if st.sidebar.button("🚪 退出登录", use_container_width=True):
-        logout()
-        st.rerun()
-    
-    menu = st.sidebar.radio("功能菜单", ["🏠 首页", "🔬 本能系统诊断", "💊 方剂推荐", "💬 智能问答"])
-    
-    if menu == "🏠 首页":
-        show_home_page()
-    elif menu == "🔬 本能系统诊断":
-        show_multimodal_diagnosis()
-    elif menu == "💊 方剂推荐":
-        show_prescription_recommendation()
-    elif menu == "💬 智能问答":
-        show_qa_module()
-
-
-if __name__ == "__main__":
-    main()
     # 显示分析结果
     if 'analysis_result' in st.session_state:
         result = st.session_state['analysis_result']
